@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d400a6f623a16cd42b3cefe620e0c8ac, type: 3}
+  m_Name: Pistola
+  m_EditorClassIdentifier: 
+  itemName: Pistola
+  itemType: 0
+  icon: {fileID: 21300000, guid: c06474b6789a59c4a95dfb483d1aec2f, type: 3}
+  description: "Una pistola b\xE1sica"
+  isStackable: 0
+  maxStack: 1
+  isUsable: 1
+  useTime: 1
+  damage: 10
+  range: 5
+  fireRate: 0.5
+  ammoCapacity: 12
+  currentAmmo: 10
+  weaponModelPrefab: {fileID: 1979423955372741288, guid: dd78834bf29b9fa419901b32eff679bd, type: 3}
+  muzzleFlashPrefab: {fileID: 0}
+  fireSound: {fileID: 0}
