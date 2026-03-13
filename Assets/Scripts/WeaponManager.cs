@@ -8,11 +8,32 @@ public class WeaponManager : MonoBehaviour
     public PlayerShooter3D shooter;
     public Transform weaponMount; // Donde se instancian/parentean las armas
     
+    [Header("Configuración de Huesos")]
+    [Tooltip("Buscar automáticamente el hueso de la mano derecha")]
+    public bool autoFindHandBone = true;
+    
+    [Tooltip("Nombre del hueso de la mano derecha (ej: 'RightHand', 'Hand_R', 'mixamorig:RightHand')")]
+    public string rightHandBoneName = "RightHand";
+    
+    [Header("Ajuste Manual (si no usa hueso)")]
+    [Tooltip("Offset de posición cuando usa WeaponMount en lugar de hueso")]
+    public Vector3 weaponPositionOffset = new Vector3(0.1f, 0, 0.3f);
+    public Vector3 weaponRotationOffset = new Vector3(0, 90, 0);
+    
+    [Header("Ajuste con Hueso de Mano")]
+    [Tooltip("Offset de posición cuando usa hueso de mano")]
+    public Vector3 handBonePositionOffset = Vector3.zero;
+    [Tooltip("Offset de rotación cuando usa hueso de mano")]
+    public Vector3 handBoneRotationOffset = new Vector3(-90, 0, 0);
+    [Tooltip("Escala cuando usa hueso de mano")]
+    public Vector3 handBoneScaleOffset = Vector3.one;
+    
     [Header("Estado")]
     public Item equippedWeapon; // El arma actualmente equipada
     
     private GameObject currentWeaponInstance;
     private Dictionary<Item, GameObject> weaponInstances = new Dictionary<Item, GameObject>();
+    private Transform rightHandBone; // Hueso de la mano derecha
 
     void Start()
     {
@@ -22,9 +43,54 @@ public class WeaponManager : MonoBehaviour
         if (shooter == null)
             shooter = GetComponent<PlayerShooter3D>();
 
-        // Si no hay mount asignado, usar este transform
-        if (weaponMount == null)
+        // Intentar encontrar el hueso de la mano derecha
+        if (autoFindHandBone)
+        {
+            FindRightHandBone();
+        }
+
+        // Si no hay mount asignado ni hueso encontrado, usar este transform
+        if (weaponMount == null && rightHandBone == null)
+        {
             weaponMount = this.transform;
+            Debug.LogWarning("No se encontró hueso de mano ni WeaponMount. Usando transform del jugador.");
+        }
+    }
+
+    /// <summary>
+    /// Busca el hueso de la mano derecha en el rig del personaje
+    /// </summary>
+    void FindRightHandBone()
+    {
+        // Buscar en todos los hijos del personaje
+        Transform[] allChildren = GetComponentsInChildren<Transform>();
+        
+        // Lista de nombres comunes para el hueso de la mano derecha
+        string[] possibleNames = new string[] 
+        { 
+            rightHandBoneName,
+            "RightHand", 
+            "Hand_R", 
+            "R_Hand",
+            "mixamorig:RightHand",  // Mixamo
+            "Bip001 R Hand",         // Biped
+            "RightHandBone"
+        };
+        
+        foreach (Transform child in allChildren)
+        {
+            foreach (string name in possibleNames)
+            {
+                if (child.name.Contains(name))
+                {
+                    rightHandBone = child;
+                    Debug.Log($"✅ Hueso de mano derecha encontrado: {child.name}");
+                    return;
+                }
+            }
+        }
+        
+        Debug.LogWarning($"⚠️ No se encontró el hueso '{rightHandBoneName}'. Usando WeaponMount.");
     }
 
     // Llamado desde InventoryUI cuando haces clic en un arma
@@ -76,6 +142,9 @@ public class WeaponManager : MonoBehaviour
         // Equipar nueva arma
         equippedWeapon = weapon;
         ActivateWeapon(weapon);
+        
+        // NUEVO: Actualizar animator
+        UpdateAnimatorWeaponState(true);
     }
 
     private void ActivateWeapon(WeaponItem weapon)
@@ -86,30 +155,43 @@ public class WeaponManager : MonoBehaviour
             return;
         }
 
+        // Determinar dónde parentear el arma (hueso de mano o weaponMount)
+        Transform parentTransform = rightHandBone != null ? rightHandBone : weaponMount;
+
         // Si ya existe una instancia de esta arma, reutilizarla
         if (weaponInstances.ContainsKey(weapon))
         {
             currentWeaponInstance = weaponInstances[weapon];
+            currentWeaponInstance.transform.SetParent(parentTransform);
             currentWeaponInstance.SetActive(true);
-            Debug.Log($"{weapon.itemName} activada (instancia existente)");
+            
+            Debug.Log($"{weapon.itemName} activada (instancia existente) en {parentTransform.name}");
         }
         else
         {
-            // Instanciar nueva arma preservando la transformación local del prefab
-            GameObject inst = Instantiate(weapon.weaponModelPrefab, weaponMount);
+            // Instanciar nueva arma
+            GameObject inst = Instantiate(weapon.weaponModelPrefab, parentTransform);
             
-            // IMPORTANTE: Preservar la transformación del prefab
-            // Si el arma aparece mal orientada, ajusta:
-            // 1. La rotación del prefab en Unity
-            // 2. O la orientación del WeaponMount
-            // NO modificamos position/rotation aquí para respetar el diseño del prefab
+            // Aplicar offset según el tipo de parent
+            if (rightHandBone == null)
+            {
+                // Usando WeaponMount
+                inst.transform.localPosition = weaponPositionOffset;
+                inst.transform.localRotation = Quaternion.Euler(weaponRotationOffset);
+            }
+            else
+            {
+                // Usando hueso de mano - Aplicar offset configurable
+                inst.transform.localPosition = handBonePositionOffset;
+                inst.transform.localRotation = Quaternion.Euler(handBoneRotationOffset);
+            }
             
             inst.SetActive(true);
             
             weaponInstances[weapon] = inst;
             currentWeaponInstance = inst;
             
-            Debug.Log($"{weapon.itemName} instanciada y activada");
+            Debug.Log($"{weapon.itemName} instanciada en {parentTransform.name}");
         }
     }
 
@@ -129,7 +211,23 @@ public class WeaponManager : MonoBehaviour
             currentWeaponInstance = null;
         }
         
+        // NUEVO: Actualizar animator
+        UpdateAnimatorWeaponState(false);
+        
         Debug.Log("Arma guardada");
+    }
+
+    /// <summary>
+    /// Actualiza el parámetro hasWeapon del Animator
+    /// </summary>
+    private void UpdateAnimatorWeaponState(bool hasWeapon)
+    {
+        PersonController controller = GetComponent<PersonController>();
+        if (controller != null && controller.animator != null)
+        {
+            controller.animator.SetBool("hasWeapon", hasWeapon);
+            Debug.Log($"Animator hasWeapon = {hasWeapon}");
+        }
     }
 
     public bool CanShoot()
@@ -172,5 +270,19 @@ public class WeaponManager : MonoBehaviour
                     normal = { textColor = new Color(1f, 0.8f, 0f) } 
                 });
         }
+        
+        // DEBUG: Mostrar info de parenteo
+        #if UNITY_EDITOR
+        if (currentWeaponInstance != null)
+        {
+            string parentInfo = rightHandBone != null 
+                ? $"Parented to: {rightHandBone.name}" 
+                : "Using WeaponMount";
+                
+            GUI.Label(new Rect(10, 100, 300, 30), 
+                parentInfo,
+                new GUIStyle { fontSize = 12, normal = { textColor = Color.yellow } });
+        }
+        #endif
     }
 }
